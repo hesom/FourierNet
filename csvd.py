@@ -4,6 +4,17 @@ import cupy as cp
 from torch.utils.dlpack import to_dlpack
 from torch.utils.dlpack import from_dlpack
 
+# for some reason the first cublas call always fails, so run a dummy cublas call on module load
+try:
+    a = cp.random.rand(1,1)
+    b = cp.random.rand(1,10)
+    cp.dot(a,b)
+except Exception:
+    pass
+finally:
+    del a
+    del b
+
 def csvd(input, some=True, compute_uv=True):
     dx = to_dlpack(input)
     cx = cp.fromDlpack(dx)
@@ -17,6 +28,27 @@ def csvd(input, some=True, compute_uv=True):
     v = from_dlpack(cp.stack((v.real, v.imag), axis=-1).toDlpack())
 
     return u,s,v
+
+def clipSingularValues(input, clip_to):
+    dx = to_dlpack(input)
+    cx = cp.fromDlpack(dx)
+    cx = 1j*cx[...,1] + cx[...,0]
+    cx = cp.transpose(cx, (0,3,4,1,2))
+    shape = cx.shape
+    cx = cx.reshape(-1, shape[-2], shape[-1])
+    maxSingularValue = 0
+    for i in range(0, cx.shape[0]):
+        u,s,v = cp.linalg.svd(cx[i], compute_uv=True, full_matrices=False)
+        m = s.max()
+        if m > maxSingularValue:
+            maxSingularValue = m
+        s = cp.minimum(s, clip_to)
+        cx[i] = cp.dot(u*s, v)
+    cx = cx.reshape(shape)
+    cx = cp.transpose(cx,(0,3,4,1,2))
+    print("Max singular value: ", maxSingularValue)
+    return from_dlpack(cp.stack((cx.real, cx.imag), axis=-1).toDlpack())
+
 
 if __name__ == '__main__':
     x = torch.tensor([[8.79,  6.11, -9.15,  9.57, -3.49,  9.84],

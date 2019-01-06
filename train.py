@@ -10,13 +10,14 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from dataset import prepare_data, Dataset
 from utils import *
+from csvd import clipSingularValues
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser(description="DnCNN")
 parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
-parser.add_argument("--batchSize", type=int, default=64, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=128, help="Training batch size")
 parser.add_argument("--num_of_layers", type=int, default=3, help="Number of total layers")
 parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
 parser.add_argument("--milestone", type=int, default=40, help="When to decay learning rate; should be less than epochs")
@@ -90,6 +91,7 @@ class FFT_Layer(nn.Module):
         # Concat the real and imaginary again then IFFT
         imgs = torch.cat((imgsR,imgsIm),-1)
         imgs = torch.ifft(imgs,2, normalized=True)
+        #imgs[...,1] *= 0
 
         return imgs
 
@@ -97,12 +99,12 @@ class FFTNet(nn.Module):
 
     def __init__(self):
         super(FFTNet, self).__init__()
-        self.fft1 = FFT_Layer(1, 40, 32)
-        self.fft2 = FFT_Layer(40, 40, 32)
-        self.fft3 = FFT_Layer(40, 40, 32)
-        self.fft4 = FFT_Layer(40, 40, 32)
-        self.fft5 = FFT_Layer(40, 40, 32)
-        self.fft6 = FFT_Layer(40, 1, 32)
+        self.fft1 = FFT_Layer(1, 40, 40)
+        self.fft2 = FFT_Layer(40, 40, 40)
+        self.fft3 = FFT_Layer(40, 40, 40)
+        self.fft4 = FFT_Layer(40, 40, 40)
+        self.fft5 = FFT_Layer(40, 40, 40)
+        self.fft6 = FFT_Layer(40, 1, 40)
 
 
     def forward(self, x):
@@ -144,7 +146,7 @@ def main():
     writer = SummaryWriter(opt.outf)
     step = 0
     noiseL_B=[0,55] # ingnored when opt.mode=='S'
-    pass
+    
     for epoch in range(opt.epochs):
         '''
         if epoch < opt.milestone:
@@ -185,7 +187,7 @@ def main():
             L = 1   # Lipschitz constant per layer
             if lipschitzNormalisation:
                 with torch.no_grad():
-                    for layer in model.modules():
+                    for layerNum, layer in enumerate(model.modules()):
                         if isinstance(layer, nn.Conv2d):
                             #norm = spectralNorm(layer.weight, layer.padding, n_power_iterations=10)
                             #norm = L_1_Norm(layer.weight)
@@ -206,20 +208,24 @@ def main():
                             
                             #W.div_(torch.Tensor([max(norm / L, 1)]).expand_as(W).cuda())
                         if isinstance(layer, FFT_Layer):
-                            W = layer.weight.data
-                            norms = torch.norm(W, dim=5, keepdim=True)
-                            
-                            norms = torch.clamp(norms, min=1)
+                            if False:
+                                W = layer.weight.data
+                                
+                                print(f'Layer {layerNum}:')
+                                print(f'Before norm:')
+                                W = clipSingularValues(W, 1)
+
+                            #norms = torch.norm(W, dim=5, keepdim=True)
+                            #norms = torch.clamp(norms, min=1)
                             #print(norms.max().item())
                             #print(norms.min().item())
-                            W /= norms
+                            #W /= norms
 
                         if isinstance(layer, nn.BatchNorm2d):
                             var = layer.__getattr__("running_var")
                             gamma = layer.weight
                             norm = (gamma / var).abs().max()
                             gamma.data.div_(torch.Tensor([max(norm / L, 1)]).expand_as(gamma.data).cuda())
-
             # results
             model.eval()
             #out_train = torch.clamp(imgn_train-model(imgn_train), 0., 1.)
@@ -236,6 +242,14 @@ def main():
         ## the end of each epoch
         model.eval()
         # validate
+        with torch.no_grad():
+                for layerNum, layer in enumerate(model.modules()):
+                    if isinstance(layer, FFT_Layer):
+                        W = layer.weight.data
+                        
+                        print(f'Layer {layerNum}:')
+                        print(f'Before norm:')
+                        W = clipSingularValues(W, 1)
         if epoch % 5 == 0:
             psnr_val = 0
             for k in range(len(dataset_val)):
@@ -264,7 +278,7 @@ def main():
 if __name__ == "__main__":
     if opt.preprocess:
         if opt.mode == 'S':
-            prepare_data(data_path='data', patch_size=32, stride=10, aug_times=1)
+            prepare_data(data_path='data', patch_size=40, stride=10, aug_times=1)
         if opt.mode == 'B':
             prepare_data(data_path='data', patch_size=50, stride=10, aug_times=2)
     main()

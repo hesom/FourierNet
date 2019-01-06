@@ -1,1 +1,1 @@
-trained_40x40/ filter=lfs diff=lfs merge=lfs -text
+trained_40x40_no_norm/ filter=lfs diff=lfs merge=lfs -text
