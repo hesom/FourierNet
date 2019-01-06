@@ -17,7 +17,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser(description="DnCNN")
 parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
-parser.add_argument("--batchSize", type=int, default=128, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=64, help="Training batch size")
 parser.add_argument("--num_of_layers", type=int, default=3, help="Number of total layers")
 parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
 parser.add_argument("--milestone", type=int, default=40, help="When to decay learning rate; should be less than epochs")
