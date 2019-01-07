@@ -103,8 +103,7 @@ class FFTNet(nn.Module):
         self.fft2 = FFT_Layer(40, 40, 40)
         self.fft3 = FFT_Layer(40, 40, 40)
         self.fft4 = FFT_Layer(40, 40, 40)
-        self.fft5 = FFT_Layer(40, 40, 40)
-        self.fft6 = FFT_Layer(40, 1, 40)
+        self.fft5 = FFT_Layer(40, 1, 40)
 
 
     def forward(self, x):
@@ -114,8 +113,7 @@ class FFTNet(nn.Module):
         x = F.relu(self.fft2(x))
         x = F.relu(self.fft3(x))
         x = F.relu(self.fft4(x))
-        x = F.relu(self.fft5(x))
-        x = self.fft6(x)
+        x = self.fft5(x)
         return x[...,0]
 
 def main():
@@ -133,10 +131,6 @@ def main():
     # Move to GPU
     device_ids = [0]
     model = nn.DataParallel(net, device_ids=device_ids).cuda()
-
-    for layer in model.modules():
-        if isinstance(layer, nn.Conv2d):
-            print(layer.weight.size())
 
     criterion.cuda()
     # Optimizer
