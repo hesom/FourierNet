@@ -11,7 +11,9 @@ from tensorboardX import SummaryWriter
 from dataset import prepare_data, Dataset
 from utils import *
 from csvd import clipSingularValues
-from models import FFTNet
+from models import FFTNet, FFTNet2, CNN
+from models import FFT_Layer
+from models import FFT_Per_Channel_Layer
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -38,12 +40,13 @@ def main():
     loader_train = DataLoader(dataset=dataset_train, num_workers=4, batch_size=opt.batchSize, shuffle=True)
     print("# of training samples: %d\n" % int(len(dataset_train)))
     # Build model
-    net = FFTNet()
+    net = CNN()
     #net.apply(weights_init_kaiming)
     criterion = nn.MSELoss(reduction='sum')
     # Move to GPU
     device_ids = [0]
     model = nn.DataParallel(net, device_ids=device_ids).cuda()
+    #model.load_state_dict(torch.load(os.path.join('logs', 'net.pth')))
 
     criterion.cuda()
     # Optimizer
@@ -52,7 +55,7 @@ def main():
     # training
     writer = SummaryWriter(opt.outf)
     step = 0
-    noiseL_B=[0,55] # ingnored when opt.mode=='S'
+    noiseL_B=[0,55] # ingnored when opt.mode=='S'  
     
     for epoch in range(opt.epochs):
         '''
@@ -89,7 +92,25 @@ def main():
             loss = criterion(out_train, img_train) / (img_train.size()[0]*2)
             loss.backward()
             optimizer.step()
+            # spectral normalization
+            with torch.no_grad():
+                for layerNum, layer in enumerate(model.modules()):
+                    if i % 100 == 0:
+                        if isinstance(layer, FFT_Layer):
+                            W = layer.weight.data
+                            
+                            print(f'Layer {layerNum}:')
+                            print(f'Before norm:')
+                            layer.weight.data = clipSingularValues(W, 1)
+                    if isinstance(layer, FFT_Per_Channel_Layer):
+                        W = layer.weight.data
+                        s = W.shape
+                        W = W.view(-1, 2)
+                        norms = torch.norm(W, dim=1, keepdim=True)
+                        norms = torch.clamp(norms, min=1)
+                        W /= norms
 
+            
             # results
             model.eval()
             #out_train = torch.clamp(imgn_train-model(imgn_train), 0., 1.)
@@ -105,16 +126,6 @@ def main():
             step += 1
         ## the end of each epoch
         model.eval()
-        
-        # spectral normalization
-        with torch.no_grad():
-                for layerNum, layer in enumerate(model.modules()):
-                    if isinstance(layer, FFT_Layer):
-                        W = layer.weight.data
-                        
-                        print(f'Layer {layerNum}:')
-                        print(f'Before norm:')
-                        W = clipSingularValues(W, 1)
 
         # validate
         if epoch % 5 == 0:
@@ -145,7 +156,7 @@ def main():
 if __name__ == "__main__":
     if opt.preprocess:
         if opt.mode == 'S':
-            prepare_data(data_path='data', patch_size=40, stride=10, aug_times=1)
+            prepare_data(data_path='data', patch_size=80, stride=10, aug_times=1)
         if opt.mode == 'B':
             prepare_data(data_path='data', patch_size=50, stride=10, aug_times=2)
     main()

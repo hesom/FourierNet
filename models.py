@@ -71,14 +71,50 @@ class FFT_Layer(nn.Module):
 
         return imgs
 
+class FFT_Per_Channel_Layer(nn.Module):
+
+    def __init__(self, inputChannels, imgSize):
+        super(FFT_Per_Channel_Layer, self).__init__()
+        self.weight = nn.Parameter(torch.Tensor(1, inputChannels, imgSize, imgSize, 2))
+        self.inputChannels = inputChannels
+        self.imgSize = imgSize
+        nn.init.xavier_normal_(self.weight)
+
+    def forward(self, imgs):
+        # assuming imgs is already complex
+        imgs = torch.fft(imgs,2, normalized=True)
+        # Extract the real and imaginary parts
+        imgsR = imgs[:, :, :, :, 0]
+        imgsIm = imgs[:, :, :, :, 1]
+
+        # Extract the real and imaginary parts
+        filtR = self.weight[:, :, :, :, 0]
+        filtIm = self.weight[:, :, :, :, 1]
+
+        # Do element wise complex multiplication
+        # Fast complex multiplication
+        ac = torch.mul(filtR, imgsR)
+        bd = torch.mul(filtIm, imgsIm)
+        
+        ab_cd = torch.mul(torch.add(filtR, filtIm), torch.add(imgsR, imgsIm))
+        imgsR = ac - bd
+        imgsIm = ab_cd - ac - bd
+
+        # Concat the real and imaginary again then IFFT
+        imgs = torch.stack((imgsR,imgsIm),-1)
+        imgs = torch.ifft(imgs,2, normalized=True)
+        #imgs[...,1] *= 0
+
+        return imgs
+
 class FFTNet(nn.Module):
 
     def __init__(self):
         super(FFTNet, self).__init__()
         self.fft1 = FFT_Layer(1, 40, 40)
-        self.fft2 = FFT_Layer(40, 40, 40)
-        self.fft3 = FFT_Layer(40, 40, 40)
-        self.fft4 = FFT_Layer(40, 40, 40)
+        #self.fft2 = FFT_Layer(1, 1, 40)
+        #self.fft3 = FFT_Layer(1, 20, 40)
+        #self.fft4 = FFT_Layer(40, 40, 40)
         self.fft5 = FFT_Layer(40, 1, 40)
 
 
@@ -86,8 +122,34 @@ class FFTNet(nn.Module):
         zeros = torch.zeros_like(x)
         x = torch.stack((x, zeros), dim=-1)
         x = F.relu(self.fft1(x))
-        x = F.relu(self.fft2(x))
-        x = F.relu(self.fft3(x))
-        x = F.relu(self.fft4(x))
+        #x = F.relu(self.fft2(x))
+        #x = F.relu(self.fft3(x))
+        #x = F.relu(self.fft4(x))
         x = self.fft5(x)
         return x[...,0]
+
+class FFTNet2(nn.Module):
+
+    def __init__(self):
+        super(FFTNet2, self).__init__()
+        layers = []
+        for i in range(0, 0):
+            layers.append(FFT_Per_Channel_Layer(1, 80))
+            layers.append(nn.ReLU())
+        layers.append(FFT_Per_Channel_Layer(1, 80))
+        self.dnn = nn.Sequential(*layers)
+
+
+    def forward(self, x):
+        zeros = torch.zeros_like(x)
+        x = torch.stack((x, zeros), dim=-1)
+        x = self.dnn(x)
+        return x[...,0]
+
+class CNN(nn.Module):
+    def __init__(self):
+        super(CNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 1, 3, padding=1, bias=False)
+    
+    def forward(self, x):
+        return self.conv1(x)
